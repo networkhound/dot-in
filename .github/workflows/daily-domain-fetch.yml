@@ -1,0 +1,44 @@
+name: Daily Domain Fetch
+
+on:
+  schedule:
+    - cron: '30 23 * * *'  # 5:00 AM IST (UTC+5:30)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-and-convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pdfplumber requests
+
+      - name: Fetch and convert domain data
+        run: |
+          # Calculate yesterday's date in IST
+          YESTERDAY=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%d-%m-%Y' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%d-%m-%Y')
+          echo "Processing domains for date: $YESTERDAY"
+          python fetch_registry_domains.py "$YESTERDAY"
+
+      - name: Commit and push changes
+        run: |
+          # Calculate yesterday's date in IST for commit message
+          YESTERDAY=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%d-%m-%Y' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%d-%m-%Y')
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .
+          git diff --staged --quiet || git commit -m "Add domain data for $YESTERDAY"
+          git push
