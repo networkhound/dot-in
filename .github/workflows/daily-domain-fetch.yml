@@ -2,7 +2,7 @@ name: Daily Domain Fetch
 
 on:
   schedule:
-    - cron: '30 23 * * *'  # 5:00 AM IST (UTC+5:30)
+    - cron: '30 3 * * *'  # 9 AM IST (UTC+5:30)
   workflow_dispatch:
 
 permissions:
