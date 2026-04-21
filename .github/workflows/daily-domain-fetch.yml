@@ -28,17 +28,17 @@ jobs:
 
       - name: Fetch and convert domain data
         run: |
-          # Calculate yesterday's date in IST
-          YESTERDAY=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%d-%m-%Y' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%d-%m-%Y')
-          echo "Processing domains for date: $YESTERDAY"
-          python fetch_registry_domains.py "$YESTERDAY"
-
+          # Calculate date for new registry file naming convention (YYYY-MM-DD)
+          FETCH_DATE=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%Y-%m-%d' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%Y-%m-%d')
+          echo "Processing domains for date: $FETCH_DATE"
+          python fetch_registry_domains.py "$FETCH_DATE"
+      
       - name: Commit and push changes
         run: |
           # Calculate yesterday's date in IST for commit message
-          YESTERDAY=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%d-%m-%Y' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%d-%m-%Y')
+          DISPLAY_DATE=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%d-%m-%Y' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%d-%m-%Y')
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add .
-          git diff --staged --quiet || git commit -m "Add domain data for $YESTERDAY"
+          git diff --staged --quiet || git commit -m "Add domain data for $DISPLAY_DATE"
           git push
