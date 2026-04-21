@@ -50,7 +50,7 @@ def process_date(date_str=None):
     else:
         date_obj = datetime.now()
 
-    date_formatted = date_obj.strftime("%d-%m-%Y")
+    date_formatted = date_obj.strftime("%Y-%m-%d")
     year = date_obj.strftime("%Y")
     month = date_obj.strftime("%m")
 
