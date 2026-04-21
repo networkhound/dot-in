@@ -43,7 +43,10 @@ def extract_domains_from_pdf(pdf_path, output_txt):
 
 def process_date(date_str=None):
     if date_str:
-        date_obj = datetime.strptime(date_str, "%d-%m-%Y")
+        try:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            date_obj = datetime.strptime(date_str, "%d-%m-%Y")
     else:
         date_obj = datetime.now()
 
