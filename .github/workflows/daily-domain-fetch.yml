@@ -2,11 +2,21 @@ name: Daily Domain Fetch
 
 on:
   schedule:
-    - cron: '30 3 * * *'  # 9 AM IST (UTC+5:30)
+    # ~9 AM IST (UTC+5:30). GitHub scheduling is best-effort and often runs late;
+    # an off-peak minute helps, and missed days are retried by --catch-up.
+    - cron: '23 3 * * *'
   workflow_dispatch:
+    inputs:
+      date:
+        description: 'Fetch a single date (YYYY-MM-DD). Leave empty to catch up on the last 7 days.'
+        required: false
 
 permissions:
   contents: write
+  issues: write
+
+concurrency:
+  group: daily-fetch
 
 jobs:
   fetch-and-convert:
@@ -27,18 +37,73 @@ jobs:
           pip install pdfplumber requests
 
       - name: Fetch and convert domain data
+        id: fetch
+        continue-on-error: true
+        env:
+          DATE: ${{ inputs.date }}
         run: |
-          # Calculate date for new registry file naming convention (YYYY-MM-DD)
-          FETCH_DATE=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%Y-%m-%d' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%Y-%m-%d')
-          echo "Processing domains for date: $FETCH_DATE"
-          python fetch_registry_domains.py "$FETCH_DATE"
-      
+          if [ -n "$DATE" ]; then
+            python fetch_registry_domains.py "$DATE"
+          else
+            python fetch_registry_domains.py --catch-up 7
+          fi
+
       - name: Commit and push changes
+        if: steps.fetch.outputs.succeeded != ''
+        env:
+          SUCCEEDED: ${{ steps.fetch.outputs.succeeded }}
         run: |
-          # Calculate yesterday's date in IST for commit message
-          DISPLAY_DATE=$(TZ='Asia/Kolkata' date -d 'yesterday' '+%d-%m-%Y' 2>/dev/null || TZ='Asia/Kolkata' date -v-1d '+%d-%m-%Y')
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add .
-          git diff --staged --quiet || git commit -m "Add domain data for $DISPLAY_DATE"
+          git add -- '20*/*/domains_*.txt'
+          git diff --staged --quiet || git commit -m "Add domain data for ${SUCCEEDED// /, }"
           git push
+
+      - name: Open issues for failed dates
+        if: steps.fetch.outputs.failed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED: ${{ steps.fetch.outputs.failed }}
+          REASONS: ${{ steps.fetch.outputs.reasons }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create fetch-failure --color d73a4a --description "Daily domain fetch failed" --force
+          for date in $FAILED; do
+            title="Fetch failed for $date"
+            existing=$(gh issue list --label fetch-failure --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+            if [ -n "$existing" ]; then
+              echo "Issue #$existing already open for $date"
+              continue
+            fi
+            reason=$(printf '%s\n' "$REASONS" | grep "^$date: " | cut -d' ' -f2-)
+            gh issue create --title "$title" --label fetch-failure --body "$(cat <<EOF
+          The daily fetch could not get domain data for **$date**.
+
+          - Source: https://registry.in/system/files/domain-creates_$date.pdf
+          - Reason: \`$reason\`
+          - Run: $RUN_URL
+
+          The workflow retries missing dates from the last 7 days, and will close this issue if a later run succeeds.
+          EOF
+          )"
+          done
+
+      - name: Close issues for recovered dates
+        if: steps.fetch.outputs.succeeded != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUCCEEDED: ${{ steps.fetch.outputs.succeeded }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for date in $SUCCEEDED; do
+            title="Fetch failed for $date"
+            for number in $(gh issue list --label fetch-failure --state open --search "\"$title\" in:title" --json number --jq '.[].number'); do
+              gh issue close "$number" --comment "Recovered in $RUN_URL"
+            done
+          done
+
+      - name: Fail if any date failed
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "::error::Fetch failed for: ${{ steps.fetch.outputs.failed || 'unknown (see fetch step log)' }}"
+          exit 1
